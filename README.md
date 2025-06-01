@@ -112,7 +112,7 @@ python main.py
 
 ## Assets & Credits
 
-- **Menu Wallpaper:** (Your chosen image, see `assets/menu_bg.jpg`)
+- **Menu Wallpaper:** [Image from here...](https://wall.alphacoders.com/big.php?i=559873)
 - **Font:** [Pixel font](https://www.dafont.com/bitmap.php) (or system default)
 - **Game Code:** Written in Python using [Pygame](https://www.pygame.org/)
 - **Inspired by:** Magic Survival (mobile game)
