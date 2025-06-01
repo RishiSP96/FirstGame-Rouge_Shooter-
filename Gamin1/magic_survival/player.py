@@ -1,5 +1,6 @@
 import pygame
 from pygame.locals import *
+import math
 
 class Player:
     def __init__(self, x, y):
@@ -26,9 +27,12 @@ class Player:
         # Stamina system
         self.stamina = 100
         self.max_stamina = 100
+        self.stamina_drain_rate = 20  # Stamina points per second while sprinting
+        self.stamina_regen_rate = 10  # Stamina points per second while regenerating
         self.is_sprinting = False
         self.sprint_timer = 0.0
         self.sprint_cooldown_timer = 0.0
+        self.target_stamina = 100  # For smooth animation
         
         # The rect is now just for collision, not for drawing
         self.rect = pygame.Rect(x, y, self.width, self.height)
@@ -77,21 +81,30 @@ class Player:
             self.is_sprinting = True
             self.sprint_timer = self.sprint_duration
             self.speed = self.base_speed * self.sprint_speed_multiplier
-            self.stamina = 0
+            self.target_stamina = 0  # Set target to empty for smooth drain
         
-        # Update sprint state
+        # Update sprint state and stamina
         if self.is_sprinting:
             self.sprint_timer -= dt
+            # Smoothly drain stamina
+            self.target_stamina = 0
+            self.stamina = max(0, self.stamina - (self.stamina_drain_rate * dt))
             if self.sprint_timer <= 0:
                 self.is_sprinting = False
                 self.speed = self.base_speed
                 self.sprint_cooldown_timer = self.sprint_cooldown
+                self.target_stamina = self.max_stamina  # Set target to full for smooth regen
         
-        # Update cooldown
+        # Update cooldown and stamina regen
         if self.sprint_cooldown_timer > 0:
             self.sprint_cooldown_timer -= dt
+            # Smoothly regenerate stamina during cooldown
+            self.target_stamina = self.max_stamina
+            if self.stamina < self.target_stamina:
+                self.stamina = min(self.max_stamina, self.stamina + (self.stamina_regen_rate * dt))
             if self.sprint_cooldown_timer <= 0:
                 self.stamina = self.max_stamina
+                self.target_stamina = self.max_stamina
         
         # Movement
         if keys[K_w] or keys[K_UP]:
@@ -126,18 +139,32 @@ class Player:
         stamina_bar_width = 50
         stamina_bar_height = 5
         stamina_ratio = self.stamina / self.max_stamina
-        # Color changes based on sprint state
-        if self.is_sprinting:
-            stamina_color = (255, 255, 0)  # Yellow while sprinting
-        elif self.sprint_cooldown_timer > 0:
-            stamina_color = (100, 100, 100)  # Gray during cooldown
-        else:
-            stamina_color = (0, 255, 255)  # Cyan when available
         
+        # Draw stamina bar background
         pygame.draw.rect(screen, (50, 50, 50), 
                         (center_x, center_y + self.height + 5, stamina_bar_width, stamina_bar_height))
+        
+        # Determine stamina bar color based on state
+        if self.is_sprinting:
+            # Yellow while sprinting, with pulsing effect
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.005)) * 0.3 + 0.7
+            stamina_color = (int(255 * pulse), int(255 * pulse), 0)
+        elif self.sprint_cooldown_timer > 0:
+            # Gray during cooldown, with slight pulsing
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.003)) * 0.2 + 0.8
+            stamina_color = (int(100 * pulse), int(100 * pulse), int(100 * pulse))
+        else:
+            # Cyan when available, with slight glow
+            glow = abs(math.sin(pygame.time.get_ticks() * 0.002)) * 0.2 + 0.8
+            stamina_color = (0, int(255 * glow), int(255 * glow))
+        
+        # Draw the stamina bar with current value
         pygame.draw.rect(screen, stamina_color,
                         (center_x, center_y + self.height + 5, stamina_bar_width * stamina_ratio, stamina_bar_height))
+        
+        # Draw a border around the stamina bar
+        pygame.draw.rect(screen, (150, 150, 150),
+                        (center_x, center_y + self.height + 5, stamina_bar_width, stamina_bar_height), 1)
     
     def gain_experience(self, amount):
         self.experience += amount

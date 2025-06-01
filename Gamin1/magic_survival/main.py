@@ -62,6 +62,7 @@ STATE_GAME_OVER = 'game_over'
 STATE_DETAILS = 'details'
 STATE_LEVEL_UP = 'level_up'  # New state for level up screen
 STATE_ABOUT = 'about'  # New state for about screen
+STATE_PAUSED = 'paused'  # New state for pause screen
 
 # Arcane Mage Arrow Cooldown (in seconds)
 ARROW_COOLDOWN = 1.0
@@ -72,23 +73,32 @@ class UpgradeButton:
         self.upgrade_key = upgrade_key
         self.upgrade_data = upgrade_data
         self.font = font
-        self.title = self.font.render(f"{upgrade_data['name']} (Level {upgrade_data['current_level']}/{upgrade_data['max_level']})", True, (255, 255, 255))
-        self.description = pygame.font.Font(None, 24).render(upgrade_data['description'], True, (200, 200, 200))
-        self.title_rect = self.title.get_rect(topleft=(self.rect.x + 10, self.rect.y + 10))
-        self.desc_rect = self.description.get_rect(topleft=(self.rect.x + 10, self.rect.y + 40))
-        self.hover = False
-    
-    def draw(self, screen):
-        # Draw button background
-        bg_color = (70, 70, 70) if self.hover else (50, 50, 50)
-        pygame.draw.rect(screen, bg_color, self.rect)
-        pygame.draw.rect(screen, (150, 150, 150) if self.hover else (100, 100, 100), self.rect, 2)
+        self.small_font = pygame.font.Font(None, 24)
+        self.tiny_font = pygame.font.Font(None, 20)
         
-        # Draw upgrade info
-        screen.blit(self.title, self.title_rect)
-        screen.blit(self.description, self.desc_rect)
+        # Create title with level indicator
+        self.title = self.font.render(f"{upgrade_data['name']}", True, (255, 255, 255))
+        self.level_text = self.small_font.render(f"Level {upgrade_data['current_level']}/{upgrade_data['max_level']}", True, (200, 200, 200))
         
-        # Draw current effect
+        # Wrap description text to fit button width
+        words = upgrade_data['description'].split()
+        wrapped_lines = []
+        current_line = []
+        max_width = self.rect.width - 40  # Leave 20px padding on each side
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            if self.small_font.size(test_line)[0] <= max_width:
+                current_line.append(word)
+            else:
+                wrapped_lines.append(' '.join(current_line))
+                current_line = [word]
+        if current_line:
+            wrapped_lines.append(' '.join(current_line))
+        
+        self.description_lines = [self.small_font.render(line, True, (200, 200, 200)) for line in wrapped_lines]
+        
+        # Calculate effect text
         effect_text = ""
         if self.upgrade_key == 'arrow_count':
             effect_text = f"Current: {self.upgrade_data['current_level'] + 1} arrows"
@@ -105,15 +115,81 @@ class UpgradeButton:
         elif self.upgrade_key == 'sprint_speed':
             effect_text = f"Current: {2.0 + (self.upgrade_data['current_level'] * 0.5)}x speed"
         
-        effect_surface = pygame.font.Font(None, 24).render(effect_text, True, (0, 255, 0))
-        effect_rect = effect_surface.get_rect(topleft=(self.rect.x + 10, self.rect.y + 70))
-        screen.blit(effect_surface, effect_rect)
+        self.effect_text = self.tiny_font.render(effect_text, True, (0, 255, 0))
+        
+        # Calculate rects for all text elements
+        self.title_rect = self.title.get_rect(topleft=(self.rect.x + 20, self.rect.y + 15))
+        self.level_rect = self.level_text.get_rect(topright=(self.rect.right - 20, self.rect.y + 15))
+        
+        # Calculate description line positions
+        self.desc_rects = []
+        y_offset = self.title_rect.bottom + 10
+        for line in self.description_lines:
+            rect = line.get_rect(topleft=(self.rect.x + 20, y_offset))
+            self.desc_rects.append(rect)
+            y_offset += line.get_height() + 5
+        
+        # Effect text position
+        self.effect_rect = self.effect_text.get_rect(bottomleft=(self.rect.x + 20, self.rect.bottom - 15))
+        
+        self.hover = False
+        self.hover_time = 0
     
-    def is_clicked(self, pos):
-        return self.rect.collidepoint(pos)
+    def draw(self, screen):
+        # Draw button background with gradient
+        bg_color = (70, 70, 70) if self.hover else (50, 50, 50)
+        highlight_color = (90, 90, 90) if self.hover else (60, 60, 60)
+        
+        # Draw main background
+        pygame.draw.rect(screen, bg_color, self.rect)
+        
+        # Draw gradient highlight at top
+        highlight_height = 4
+        pygame.draw.rect(screen, highlight_color, 
+                        (self.rect.x, self.rect.y, self.rect.width, highlight_height))
+        
+        # Draw border with glow effect when hovered
+        border_color = (150, 150, 150) if self.hover else (100, 100, 100)
+        border_width = 3 if self.hover else 2
+        
+        # Draw outer glow when hovered
+        if self.hover:
+            glow_surf = pygame.Surface((self.rect.width + 4, self.rect.height + 4), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surf, (*border_color, 128), 
+                           (0, 0, self.rect.width + 4, self.rect.height + 4), 
+                           border_radius=5)
+            screen.blit(glow_surf, (self.rect.x - 2, self.rect.y - 2))
+        
+        # Draw main border
+        pygame.draw.rect(screen, border_color, self.rect, border_width, border_radius=5)
+        
+        # Draw title and level
+        screen.blit(self.title, self.title_rect)
+        screen.blit(self.level_text, self.level_rect)
+        
+        # Draw description lines
+        for line, rect in zip(self.description_lines, self.desc_rects):
+            screen.blit(line, rect)
+        
+        # Draw effect text with icon
+        screen.blit(self.effect_text, self.effect_rect)
+        
+        # Draw a small arrow icon next to effect text
+        arrow_points = [
+            (self.effect_rect.right + 5, self.effect_rect.centery),
+            (self.effect_rect.right + 15, self.effect_rect.centery - 5),
+            (self.effect_rect.right + 15, self.effect_rect.centery + 5)
+        ]
+        pygame.draw.polygon(screen, (0, 255, 0), arrow_points)
     
     def update_hover(self, pos):
+        was_hover = self.hover
         self.hover = self.rect.collidepoint(pos)
+        if self.hover and not was_hover:
+            self.hover_time = pygame.time.get_ticks()
+
+    def is_clicked(self, pos):
+        return self.rect.collidepoint(pos)
 
 class ArcaneMage(Player):
     def __init__(self, x, y):
@@ -158,14 +234,18 @@ class ArcaneMage(Player):
             y += dy * 10
             self.arrows[i] = (x, y, dx, dy)
             
-        # Check collision with enemies
+            # Check collision with enemies
             arrow_rect = pygame.Rect(x - 5, y - 5, 10, 10)
+            hit_enemy = False
             for enemy in enemies[:]:
                 if arrow_rect.colliderect(enemy.rect):
                     enemies.remove(enemy)
                     self.gain_experience(15)
-                    self.arrows.pop(i)
-                break
+                    hit_enemy = True
+                    break
+            
+            if hit_enemy:
+                self.arrows.pop(i)
 
     def draw_arrow(self, screen, offset_x, offset_y):
         for x, y, _, _ in self.arrows:
@@ -365,6 +445,19 @@ class Game:
         self.about_scroll_offset = 0
         self.max_scroll = 0
 
+        # Add pause screen buttons
+        button_width = 200
+        button_height = 50
+        button_spacing = 20
+        start_x = (SCREEN_WIDTH - button_width) // 2
+        start_y = SCREEN_HEIGHT // 2
+        
+        self.pause_buttons = [
+            Button((start_x, start_y, button_width, button_height), "Resume", self.font, GREEN, (0, 100, 0)),
+            Button((start_x, start_y + button_height + button_spacing, button_width, button_height), "Details", self.font, BLUE, (0, 50, 100)),
+            Button((start_x, start_y + (button_height + button_spacing) * 2, button_width, button_height), "Main Menu", self.font, RED, (100, 0, 0))
+        ]
+
     def reset_game(self):
         if self.selected_class == "Arcane Mage":
             self.player = ArcaneMage(0, 0)
@@ -405,11 +498,11 @@ class Game:
         self.state = STATE_LEVEL_UP
         available_upgrades = self.player.get_available_upgrades()
         
-        # Create upgrade buttons
+        # Create upgrade buttons with better spacing
         self.upgrade_buttons = []
-        button_width = 300
-        button_height = 120  # Increased height to accommodate effect text
-        padding = 20
+        button_width = 350  # Increased width
+        button_height = 140  # Increased height
+        padding = 30  # Increased padding
         start_x = (SCREEN_WIDTH - (button_width * 2 + padding)) // 2
         start_y = (SCREEN_HEIGHT - (len(available_upgrades) // 2 + 1) * (button_height + padding)) // 2
         
@@ -420,9 +513,11 @@ class Game:
             y = start_y + row * (button_height + padding)
             self.upgrade_buttons.append(UpgradeButton((x, y, button_width, button_height), key, data, self.font))
         
-        # Create title and instruction
+        # Create title with glow effect
         self.level_up_title = self.font.render(f"Level {self.player.level} Up!", True, (255, 255, 255))
         self.level_up_instruction = pygame.font.Font(None, 36).render("Choose ONE upgrade:", True, (200, 200, 200))
+        
+        # Center the title and instruction
         self.level_up_title_rect = self.level_up_title.get_rect(center=(SCREEN_WIDTH // 2, start_y - 80))
         self.level_up_instruction_rect = self.level_up_instruction.get_rect(center=(SCREEN_WIDTH // 2, start_y - 30))
 
@@ -433,12 +528,24 @@ class Game:
             elif event.type == KEYDOWN:
                 if event.key == K_ESCAPE:
                     if self.state == STATE_RUNNING:
-                        self.running = False
+                        self.state = STATE_PAUSED
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_RUNNING
                     elif self.state in [STATE_MENU, STATE_CLASS_SELECT, STATE_GAME_OVER, STATE_DETAILS, STATE_LEVEL_UP, STATE_ABOUT]:
                         self.running = False
             elif event.type == MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
-                    if self.state == STATE_RUNNING and isinstance(self.player, ArcaneMage):
+                    if self.state == STATE_PAUSED:
+                        for btn in self.pause_buttons:
+                            if btn.is_clicked(event.pos):
+                                if btn.text == "Resume":
+                                    self.state = STATE_RUNNING
+                                elif btn.text == "Details":
+                                    self.state = STATE_DETAILS
+                                elif btn.text == "Main Menu":
+                                    self.state = STATE_MENU
+                                return
+                    elif self.state == STATE_RUNNING and isinstance(self.player, ArcaneMage):
                         self.player.shoot_arrow(self.enemies)
                     elif self.state == STATE_LEVEL_UP:
                         for button in self.upgrade_buttons:
@@ -645,13 +752,27 @@ class Game:
                 btn.draw(self.screen)
             self.exit_button.draw(self.screen)
         elif self.state == STATE_LEVEL_UP:
-            self.screen.fill(BLACK)
+            # Draw semi-transparent overlay
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 128))  # Semi-transparent black
+            self.screen.blit(overlay, (0, 0))
+            
+            # Draw title with glow effect
+            glow_surf = pygame.Surface((self.level_up_title.get_width() + 20, self.level_up_title.get_height() + 20), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surf, (255, 255, 255, 64), 
+                           (0, 0, self.level_up_title.get_width() + 20, self.level_up_title.get_height() + 20),
+                           border_radius=10)
+            glow_rect = glow_surf.get_rect(center=self.level_up_title_rect.center)
+            self.screen.blit(glow_surf, glow_rect)
+            
             # Draw title and instruction
             self.screen.blit(self.level_up_title, self.level_up_title_rect)
             self.screen.blit(self.level_up_instruction, self.level_up_instruction_rect)
+            
             # Draw upgrade buttons
             for button in self.upgrade_buttons:
                 button.draw(self.screen)
+            
             # Draw exit button
             self.exit_button.draw(self.screen)
         elif self.state == STATE_ABOUT:
@@ -700,6 +821,23 @@ class Game:
                     self.about_scroll_offset = 0
             
             self.about_back_button.draw(self.screen)
+            self.exit_button.draw(self.screen)
+        elif self.state == STATE_PAUSED:
+            # Draw semi-transparent overlay
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 128))  # Semi-transparent black
+            self.screen.blit(overlay, (0, 0))
+            
+            # Draw pause title
+            pause_title = self.font.render("Game Paused", True, WHITE)
+            title_rect = pause_title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4))
+            self.screen.blit(pause_title, title_rect)
+            
+            # Draw pause buttons
+            for btn in self.pause_buttons:
+                btn.draw(self.screen)
+            
+            # Draw exit button
             self.exit_button.draw(self.screen)
         pygame.display.flip()
 
