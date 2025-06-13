@@ -9,6 +9,7 @@ import math
 import time
 
 # Initialize Pygame
+# This is new
 pygame.init()
 
 # Get the screen info for fullscreen
